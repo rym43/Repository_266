@@ -87,6 +87,7 @@ fun TaskScreen(
     tasks: List<Task>,
     onToggleTask: (Task) -> Unit,
     onAddTask: (String, String) -> Unit,
+    onOpenEvents: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
@@ -108,6 +109,13 @@ fun TaskScreen(
                     checked = isDarkMode,
                     onCheckedChange = onToggleDarkMode
                 )
+            }
+
+            TextButton(
+                onClick = onOpenEvents,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text("Open Events")
             }
 
             HorizontalDivider()
@@ -269,7 +277,8 @@ fun TaskPreview() {
                 Task(2, "Task 2", "Description 2", true)
             ),
             onToggleTask = {},
-            onAddTask = { _, _ -> }
+            onAddTask = { _, _ -> },
+            onOpenEvents = {}
         )
     }
 }

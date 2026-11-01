@@ -34,8 +34,12 @@ fun CampusNavHost(
                 onToggleDarkMode = { viewModel.toggleDarkMode(it) },
                 tasks = tasks,
                 onToggleTask = { viewModel.toggleTaskCompletion(it) },
-                onAddTask = { title, description -> viewModel.upsertTask(title, description) }
+                onAddTask = { title, description -> viewModel.upsertTask(title, description) },
+                onOpenEvents = { navController.navigate(CampusRoutes.EVENTS) }
             )
+        }
+        composable(CampusRoutes.EVENTS) {
+            EventsScreen()
         }
     }
 }
