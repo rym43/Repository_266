@@ -1,8 +1,12 @@
 package com.inci.campuscompanion.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import com.inci.campuscompanion.data.remote.EventDto
 
+@Entity(tableName = "events")
 data class CampusEvent(
+    @PrimaryKey
     val id: Int,
     val title: String,
     val description: String,
