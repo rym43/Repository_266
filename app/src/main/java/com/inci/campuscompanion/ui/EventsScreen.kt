@@ -38,10 +38,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.inci.campuscompanion.model.CampusEvent
+import com.inci.campuscompanion.work.RefreshStatus
+
+private fun RefreshStatus.label(): String = when (this) {
+    RefreshStatus.Idle -> "Showing cached events"
+    RefreshStatus.WaitingForNetwork -> "Refresh queued, waiting for network…"
+    RefreshStatus.Running -> "Refreshing events…"
+    is RefreshStatus.Retrying -> "Refresh attempt $attempt failed, retrying soon…"
+    RefreshStatus.Succeeded -> "Events up to date"
+    is RefreshStatus.Failed -> "Refresh failed: $message"
+}
 
 @Composable
 fun EventsScreen(
     uiState: EventsUiState,
+    refreshStatus: RefreshStatus,
     isSimulatingError: Boolean,
     onRefresh: () -> Unit,
     onToggleSimulateError: (Boolean) -> Unit,
@@ -81,6 +92,17 @@ fun EventsScreen(
                 )
             }
         }
+
+        Text(
+            text = refreshStatus.label(),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (refreshStatus is RefreshStatus.Failed) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+        )
 
         HorizontalDivider()
 

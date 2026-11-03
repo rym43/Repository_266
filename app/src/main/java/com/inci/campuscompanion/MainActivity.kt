@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.work.WorkManager
 import com.inci.campuscompanion.data.AppDatabase
 import com.inci.campuscompanion.data.EventsRepository
 import com.inci.campuscompanion.data.TaskRepository
@@ -56,6 +57,7 @@ import com.inci.campuscompanion.ui.EventsScreen
 import com.inci.campuscompanion.ui.EventsViewModel
 import com.inci.campuscompanion.ui.MainViewModel
 import com.inci.campuscompanion.ui.theme.CampusCompanionTheme
+import com.inci.campuscompanion.work.EventsRefreshScheduler
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,19 +69,21 @@ class MainActivity : ComponentActivity() {
         val preferencesRepository = UserPreferencesRepository(dataStore)
 
         val campusApi = CampusApi.create()
-        val eventsRepository = EventsRepository(campusApi)
+        val eventsRepository = EventsRepository(campusApi, database.eventDao())
+        val refreshScheduler = EventsRefreshScheduler(WorkManager.getInstance(applicationContext))
 
         val mainViewModel: MainViewModel by viewModels {
             MainViewModel.Factory(preferencesRepository, taskRepository)
         }
         val eventsViewModel: EventsViewModel by viewModels {
-            EventsViewModel.Factory(eventsRepository)
+            EventsViewModel.Factory(eventsRepository, refreshScheduler)
         }
 
         setContent {
             val isDarkMode by mainViewModel.isDarkMode.collectAsStateWithLifecycle()
             val tasks by mainViewModel.tasks.collectAsStateWithLifecycle()
             val eventsUiState by eventsViewModel.uiState.collectAsStateWithLifecycle()
+            val refreshStatus by eventsViewModel.refreshStatus.collectAsStateWithLifecycle()
             val isSimulatingError by eventsViewModel.isSimulatingError.collectAsStateWithLifecycle()
 
             var selectedTab by remember { mutableIntStateOf(0) }
@@ -107,8 +111,9 @@ class MainActivity : ComponentActivity() {
                     if (selectedTab == 0) {
                         EventsScreen(
                             uiState = eventsUiState,
+                            refreshStatus = refreshStatus,
                             isSimulatingError = isSimulatingError,
-                            onRefresh = { eventsViewModel.loadEvents() },
+                            onRefresh = { eventsViewModel.refreshEvents() },
                             onToggleSimulateError = { eventsViewModel.toggleSimulateError(it) },
                             modifier = Modifier.padding(innerPadding)
                         )

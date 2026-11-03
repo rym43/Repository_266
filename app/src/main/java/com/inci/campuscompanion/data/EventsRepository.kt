@@ -5,11 +5,23 @@ import com.inci.campuscompanion.data.remote.EventDto
 import com.inci.campuscompanion.model.CampusEvent
 import com.inci.campuscompanion.model.toCampusEvent
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 
 class EventsRepository(
-    private val campusApi: CampusApi
+    private val campusApi: CampusApi,
+    private val eventDao: EventDao
 ) {
     var simulateError: Boolean = false
+
+    // The UI always reads from the Room cache; refreshEvents() is the only writer.
+    val cachedEvents: Flow<List<CampusEvent>> = eventDao.getEvents()
+
+    suspend fun refreshEvents(): Result<Int> {
+        return getEvents().map { events ->
+            eventDao.replaceEvents(events)
+            events.size
+        }
+    }
 
     suspend fun getEvents(): Result<List<CampusEvent>> {
         if (simulateError) {

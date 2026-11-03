@@ -5,10 +5,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.inci.campuscompanion.data.EventsRepository
 import com.inci.campuscompanion.model.CampusEvent
+import com.inci.campuscompanion.work.EventsRefreshScheduler
+import com.inci.campuscompanion.work.RefreshStatus
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 
 sealed interface EventsUiState {
     data object Loading : EventsUiState
@@ -17,46 +21,50 @@ sealed interface EventsUiState {
 }
 
 class EventsViewModel(
-    private val eventsRepository: EventsRepository
+    eventsRepository: EventsRepository,
+    private val refreshScheduler: EventsRefreshScheduler
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<EventsUiState>(EventsUiState.Loading)
-    val uiState: StateFlow<EventsUiState> = _uiState.asStateFlow()
+    val refreshStatus: StateFlow<RefreshStatus> = refreshScheduler.status
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RefreshStatus.Idle)
+
+    // Cached events win: they stay on screen while refresh work waits, runs or fails.
+    // Loading/Error only appear when the cache is still empty.
+    val uiState: StateFlow<EventsUiState> =
+        combine(eventsRepository.cachedEvents, refreshStatus) { events, status ->
+            when {
+                events.isNotEmpty() -> EventsUiState.Success(events)
+                status is RefreshStatus.Failed -> EventsUiState.Error(status.message)
+                status is RefreshStatus.Succeeded -> EventsUiState.Success(emptyList())
+                else -> EventsUiState.Loading
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EventsUiState.Loading)
 
     private val _isSimulatingError = MutableStateFlow(false)
     val isSimulatingError: StateFlow<Boolean> = _isSimulatingError.asStateFlow()
 
     init {
-        loadEvents()
+        refreshEvents()
     }
 
-    fun loadEvents() {
-        viewModelScope.launch {
-            _uiState.value = EventsUiState.Loading
-            eventsRepository.getEvents()
-                .onSuccess { events ->
-                    _uiState.value = EventsUiState.Success(events)
-                }
-                .onFailure { exception ->
-                    _uiState.value = EventsUiState.Error(
-                        exception.localizedMessage ?: "Failed to load events. Please check your network connection."
-                    )
-                }
-        }
+    fun refreshEvents() {
+        refreshScheduler.requestRefresh(simulateError = _isSimulatingError.value)
     }
 
     fun toggleSimulateError(enabled: Boolean) {
         _isSimulatingError.value = enabled
-        eventsRepository.simulateError = enabled
-        loadEvents()
+        refreshEvents()
     }
 
     companion object {
-        fun Factory(eventsRepository: EventsRepository): ViewModelProvider.Factory =
+        fun Factory(
+            eventsRepository: EventsRepository,
+            refreshScheduler: EventsRefreshScheduler
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return EventsViewModel(eventsRepository) as T
+                    return EventsViewModel(eventsRepository, refreshScheduler) as T
                 }
             }
     }
