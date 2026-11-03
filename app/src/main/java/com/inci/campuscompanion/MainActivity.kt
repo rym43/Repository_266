@@ -18,12 +18,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -31,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,13 +45,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.work.WorkManager
 import com.inci.campuscompanion.data.AppDatabase
+import com.inci.campuscompanion.data.EventsRepository
 import com.inci.campuscompanion.data.TaskRepository
 import com.inci.campuscompanion.data.UserPreferencesRepository
 import com.inci.campuscompanion.data.dataStore
+import com.inci.campuscompanion.data.remote.CampusApi
 import com.inci.campuscompanion.model.Task
+import com.inci.campuscompanion.ui.EventsScreen
+import com.inci.campuscompanion.ui.EventsViewModel
 import com.inci.campuscompanion.ui.MainViewModel
 import com.inci.campuscompanion.ui.theme.CampusCompanionTheme
+import com.inci.campuscompanion.work.EventsRefreshScheduler
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,24 +68,65 @@ class MainActivity : ComponentActivity() {
         val taskRepository = TaskRepository(database.taskDao())
         val preferencesRepository = UserPreferencesRepository(dataStore)
 
-        val viewModel: MainViewModel by viewModels {
+        val campusApi = CampusApi.create()
+        val eventsRepository = EventsRepository(campusApi, database.eventDao())
+        val refreshScheduler = EventsRefreshScheduler(WorkManager.getInstance(applicationContext))
+
+        val mainViewModel: MainViewModel by viewModels {
             MainViewModel.Factory(preferencesRepository, taskRepository)
+        }
+        val eventsViewModel: EventsViewModel by viewModels {
+            EventsViewModel.Factory(eventsRepository, refreshScheduler)
         }
 
         setContent {
-            val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
-            val tasks by viewModel.tasks.collectAsStateWithLifecycle()
+            val isDarkMode by mainViewModel.isDarkMode.collectAsStateWithLifecycle()
+            val tasks by mainViewModel.tasks.collectAsStateWithLifecycle()
+            val eventsUiState by eventsViewModel.uiState.collectAsStateWithLifecycle()
+            val refreshStatus by eventsViewModel.refreshStatus.collectAsStateWithLifecycle()
+            val isSimulatingError by eventsViewModel.isSimulatingError.collectAsStateWithLifecycle()
+
+            var selectedTab by remember { mutableIntStateOf(0) }
 
             CampusCompanionTheme(darkTheme = isDarkMode) {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    TaskScreen(
-                        isDarkMode = isDarkMode,
-                        onToggleDarkMode = { viewModel.toggleDarkMode(it) },
-                        tasks = tasks,
-                        onToggleTask = { viewModel.toggleTaskCompletion(it) },
-                        onAddTask = { title, description -> viewModel.upsertTask(title, description) },
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    bottomBar = {
+                        NavigationBar {
+                            NavigationBarItem(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                icon = { Icon(Icons.Default.Event, contentDescription = "Events") },
+                                label = { Text("Events Feed") }
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                icon = { Icon(Icons.Default.TaskAlt, contentDescription = "Tasks") },
+                                label = { Text("Tasks") }
+                            )
+                        }
+                    }
+                ) { innerPadding ->
+                    if (selectedTab == 0) {
+                        EventsScreen(
+                            uiState = eventsUiState,
+                            refreshStatus = refreshStatus,
+                            isSimulatingError = isSimulatingError,
+                            onRefresh = { eventsViewModel.refreshEvents() },
+                            onToggleSimulateError = { eventsViewModel.toggleSimulateError(it) },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                    } else {
+                        TaskScreen(
+                            isDarkMode = isDarkMode,
+                            onToggleDarkMode = { mainViewModel.toggleDarkMode(it) },
+                            tasks = tasks,
+                            onToggleTask = { mainViewModel.toggleTaskCompletion(it) },
+                            onAddTask = { title, description -> mainViewModel.upsertTask(title, description) },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                    }
                 }
             }
         }
